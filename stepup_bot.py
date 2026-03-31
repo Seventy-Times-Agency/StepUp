@@ -1,12 +1,16 @@
 import asyncio
+import os
+from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import Command
 
+load_dotenv()
+
 # ==========================
 # Настройки бота
 # ==========================
-API_TOKEN = "BOT_TOKEN"
+API_TOKEN = os.getenv("BOT_TOKEN")
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
