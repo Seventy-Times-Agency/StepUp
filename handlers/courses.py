@@ -1,22 +1,23 @@
+import logging
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 from content.courses import COURSES_BY_ID, CATEGORIES_BY_BTN, CATEGORIES_BY_ID
 from keyboards.inline import (
     category_courses_kb, course_detail_kb,
-    modules_kb, lessons_kb, back_to_modules_kb,
+    modules_kb, lessons_kb, lesson_info_kb, back_to_modules_kb,
 )
 from keyboards.reply import lesson_kb
-from database.db import get_or_create_user, get_user_progress, start_course
+from database.db import get_or_create_user, get_user_progress, start_course, save_message
 from states.learning import LearningState
 from ai.tutor import start_lesson
-from database.db import save_message
 
+log = logging.getLogger(__name__)
 router = Router()
 
 
 # ==========================
-# Reply-кнопки (нижняя клавиатура)
+# Reply-кнопки
 # ==========================
 
 @router.message(F.text == "🆓 Первый шаг")
@@ -79,10 +80,8 @@ async def cb_course_detail(callback: CallbackQuery):
     if not course:
         await callback.answer("Курс не найден", show_alert=True)
         return
-
     tag = "🆓 БЕСПЛАТНО" if course["is_free"] else "🔒 Скоро"
     text = f"{course['emoji']} *{course['title']}*\n{tag}\n\n{course['description']}"
-
     await callback.message.edit_text(
         text,
         reply_markup=course_detail_kb(course_id, course["is_free"], course["category"]),
@@ -98,16 +97,14 @@ async def cb_modules(callback: CallbackQuery):
     if not course:
         await callback.answer("Курс не найден", show_alert=True)
         return
-
     user_db_id = await get_or_create_user(
         telegram_id=callback.from_user.id,
         username=callback.from_user.username or "",
         full_name=callback.from_user.full_name or "",
     )
     await start_course(user_db_id, course_id)
-
     await callback.message.edit_text(
-        f"📋 *{course['title']}* — модули\n\nВыбери модуль для начала:",
+        f"📋 *{course['title']}*\n\nВыбери модуль:",
         reply_markup=modules_kb(course_id),
         parse_mode="Markdown",
     )
@@ -118,14 +115,10 @@ async def cb_modules(callback: CallbackQuery):
 async def cb_module(callback: CallbackQuery):
     _, course_id, module_id = callback.data.split(":")
     course = COURSES_BY_ID.get(course_id)
-    if not course:
-        await callback.answer("Курс не найден", show_alert=True)
-        return
     module = next((m for m in course["modules"] if m["id"] == module_id), None)
     if not module:
         await callback.answer("Модуль не найден", show_alert=True)
         return
-
     await callback.message.edit_text(
         f"{module['emoji']} *{module['title']}*\n\nВыбери урок:",
         reply_markup=lessons_kb(course_id, module_id),
@@ -135,7 +128,32 @@ async def cb_module(callback: CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("lesson:"))
-async def cb_lesson(callback: CallbackQuery, state: FSMContext):
+async def cb_lesson(callback: CallbackQuery):
+    """Показываем страницу урока с описанием — без запуска репетитора."""
+    _, course_id, module_id, lesson_id = callback.data.split(":")
+    course = COURSES_BY_ID.get(course_id)
+    module = next((m for m in course["modules"] if m["id"] == module_id), None)
+    lesson = next((l for l in module["lessons"] if l["id"] == lesson_id), None)
+    if not lesson:
+        await callback.answer("Урок не найден", show_alert=True)
+        return
+
+    text = (
+        f"📖 *{lesson['title']}*\n\n"
+        f"{lesson['description']}\n\n"
+        f"✅ *Что получишь:*\n{lesson['outcome']}"
+    )
+    await callback.message.edit_text(
+        text,
+        reply_markup=lesson_info_kb(course_id, module_id, lesson_id),
+        parse_mode="Markdown",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("begin:"))
+async def cb_begin_lesson(callback: CallbackQuery, state: FSMContext):
+    """Запускаем ИИ-репетитора — только после нажатия 'Начать урок'."""
     _, course_id, module_id, lesson_id = callback.data.split(":")
     course = COURSES_BY_ID.get(course_id)
     module = next((m for m in course["modules"] if m["id"] == module_id), None)
@@ -175,19 +193,20 @@ async def cb_lesson(callback: CallbackQuery, state: FSMContext):
         )
         await save_message(user_db_id, course_id, module_id, lesson_id, "assistant", intro)
         await callback.message.answer(intro)
-    except Exception:
-        await callback.message.answer("⚠️ Не удалось подключиться к репетитору. Попробуй позже.")
+    except Exception as e:
+        log.error("Tutor start_lesson error: %s", e)
+        await callback.message.answer(
+            f"⚠️ Не удалось подключиться к репетитору.\n\n`{e}`\n\nПроверь OPENROUTER\\_API\\_KEY в настройках.",
+            parse_mode="Markdown",
+        )
 
 
 @router.callback_query(F.data.startswith("quiz:"))
 async def cb_quiz(callback: CallbackQuery):
     _, course_id, module_id = callback.data.split(":")
-    module = next(
-        (m for m in COURSES_BY_ID[course_id]["modules"] if m["id"] == module_id), None
-    )
+    module = next((m for m in COURSES_BY_ID[course_id]["modules"] if m["id"] == module_id), None)
     await callback.message.edit_text(
-        f"🧪 *Тест: {module['title']}*\n\n"
-        "_Тесты появятся вместе с контентом уроков. Совсем скоро!_",
+        f"🧪 *Тест: {module['title']}*\n\n_Тесты появятся совсем скоро!_",
         reply_markup=back_to_modules_kb(course_id, module_id),
         parse_mode="Markdown",
     )

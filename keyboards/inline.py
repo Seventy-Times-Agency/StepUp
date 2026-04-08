@@ -3,7 +3,6 @@ from content.courses import get_courses_by_category, COURSES_BY_ID
 
 
 def category_courses_kb(category_id: str) -> InlineKeyboardMarkup:
-    """Список курсов в категории."""
     buttons = []
     for course in get_courses_by_category(category_id):
         buttons.append([InlineKeyboardButton(
@@ -14,7 +13,6 @@ def category_courses_kb(category_id: str) -> InlineKeyboardMarkup:
 
 
 def course_detail_kb(course_id: str, is_free: bool, category_id: str | None) -> InlineKeyboardMarkup:
-    """Страница курса."""
     buttons = []
     if is_free:
         buttons.append([InlineKeyboardButton(text="▶️ Начать курс", callback_data=f"modules:{course_id}")])
@@ -24,7 +22,6 @@ def course_detail_kb(course_id: str, is_free: bool, category_id: str | None) -> 
 
 
 def modules_kb(course_id: str) -> InlineKeyboardMarkup:
-    """Список модулей курса."""
     course = COURSES_BY_ID.get(course_id)
     buttons = []
     for module in course.get("modules", []):
@@ -38,13 +35,12 @@ def modules_kb(course_id: str) -> InlineKeyboardMarkup:
 
 
 def lessons_kb(course_id: str, module_id: str) -> InlineKeyboardMarkup:
-    """Список уроков модуля."""
     course = COURSES_BY_ID.get(course_id)
     module = next((m for m in course["modules"] if m["id"] == module_id), None)
     buttons = []
-    for lesson in module["lessons"]:
+    for i, lesson in enumerate(module["lessons"], 1):
         buttons.append([InlineKeyboardButton(
-            text=f"📖 {lesson['title']}",
+            text=f"{i}. {lesson['title']}",
             callback_data=f"lesson:{course_id}:{module_id}:{lesson['id']}",
         )])
     if module["has_quiz"]:
@@ -57,6 +53,20 @@ def lessons_kb(course_id: str, module_id: str) -> InlineKeyboardMarkup:
         callback_data=f"modules:{course_id}",
     )])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def lesson_info_kb(course_id: str, module_id: str, lesson_id: str) -> InlineKeyboardMarkup:
+    """Страница урока с описанием — кнопка запуска и назад."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="▶️ Начать урок",
+            callback_data=f"begin:{course_id}:{module_id}:{lesson_id}",
+        )],
+        [InlineKeyboardButton(
+            text="⬅️ К урокам",
+            callback_data=f"module:{course_id}:{module_id}",
+        )],
+    ])
 
 
 def back_to_modules_kb(course_id: str, module_id: str) -> InlineKeyboardMarkup:

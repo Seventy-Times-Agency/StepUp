@@ -1,6 +1,9 @@
+import logging
 from openai import AsyncOpenAI
 from config import OPENROUTER_API_KEY, OPENROUTER_MODEL, OPENROUTER_BASE_URL
 from ai.prompts import get_lesson_system_prompt
+
+log = logging.getLogger(__name__)
 
 client = AsyncOpenAI(
     api_key=OPENROUTER_API_KEY,
