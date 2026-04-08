@@ -1,1 +1,1 @@
-worker: python3 stepup_bot.py
+worker: python3 bot.py
