@@ -1,5 +1,5 @@
 import aiosqlite
-from config import DB_PATH
+from config import DB_PATH, CONVERSATION_HISTORY_LIMIT
 
 
 async def init_db():
@@ -24,6 +24,19 @@ async def init_db():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id),
                 UNIQUE(user_id, course_id)
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS conversations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                course_id TEXT NOT NULL,
+                module_id TEXT NOT NULL,
+                lesson_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
             )
         """)
         await db.commit()
@@ -60,5 +73,47 @@ async def start_course(user_id: int, course_id: str):
         await db.execute(
             "INSERT OR IGNORE INTO progress (user_id, course_id, lesson_id) VALUES (?, ?, 0)",
             (user_id, course_id),
+        )
+        await db.commit()
+
+
+# ==========================
+# История диалога с репетитором
+# ==========================
+
+async def save_message(
+    user_id: int, course_id: str, module_id: str, lesson_id: str, role: str, content: str
+):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """INSERT INTO conversations (user_id, course_id, module_id, lesson_id, role, content)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (user_id, course_id, module_id, lesson_id, role, content),
+        )
+        await db.commit()
+
+
+async def get_conversation(
+    user_id: int, course_id: str, module_id: str, lesson_id: str
+) -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            """SELECT role, content FROM conversations
+               WHERE user_id=? AND course_id=? AND module_id=? AND lesson_id=?
+               ORDER BY created_at DESC LIMIT ?""",
+            (user_id, course_id, module_id, lesson_id, CONVERSATION_HISTORY_LIMIT),
+        )
+        rows = await cursor.fetchall()
+        return [{"role": row[0], "content": row[1]} for row in reversed(rows)]
+
+
+async def clear_conversation(
+    user_id: int, course_id: str, module_id: str, lesson_id: str
+):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """DELETE FROM conversations
+               WHERE user_id=? AND course_id=? AND module_id=? AND lesson_id=?""",
+            (user_id, course_id, module_id, lesson_id),
         )
         await db.commit()

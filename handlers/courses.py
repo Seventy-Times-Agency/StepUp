@@ -1,11 +1,16 @@
 from aiogram import Router, F
+from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 from content.courses import COURSES_BY_ID, CATEGORIES_BY_BTN, CATEGORIES_BY_ID
 from keyboards.inline import (
     category_courses_kb, course_detail_kb,
     modules_kb, lessons_kb, back_to_modules_kb,
 )
+from keyboards.reply import lesson_kb
 from database.db import get_or_create_user, get_user_progress, start_course
+from states.learning import LearningState
+from ai.tutor import start_lesson
+from database.db import save_message
 
 router = Router()
 
@@ -130,7 +135,7 @@ async def cb_module(callback: CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("lesson:"))
-async def cb_lesson(callback: CallbackQuery):
+async def cb_lesson(callback: CallbackQuery, state: FSMContext):
     _, course_id, module_id, lesson_id = callback.data.split(":")
     course = COURSES_BY_ID.get(course_id)
     module = next((m for m in course["modules"] if m["id"] == module_id), None)
@@ -139,13 +144,39 @@ async def cb_lesson(callback: CallbackQuery):
         await callback.answer("Урок не найден", show_alert=True)
         return
 
-    await callback.message.edit_text(
-        f"📖 *{lesson['title']}*\n\n"
-        "_Контент урока готовится. Скоро здесь появится материал с ИИ-репетитором!_",
-        reply_markup=back_to_modules_kb(course_id, module_id),
+    await state.set_state(LearningState.in_lesson)
+    await state.update_data(
+        course_id=course_id,
+        module_id=module_id,
+        lesson_id=lesson_id,
+        course_title=course["title"],
+        module_title=module["title"],
+        lesson_title=lesson["title"],
+    )
+
+    await callback.message.answer(
+        f"📖 *{lesson['title']}*\n\nРепетитор начинает урок...",
+        reply_markup=lesson_kb(),
         parse_mode="Markdown",
     )
     await callback.answer()
+
+    user_db_id = await get_or_create_user(
+        telegram_id=callback.from_user.id,
+        username=callback.from_user.username or "",
+        full_name=callback.from_user.full_name or "",
+    )
+
+    try:
+        intro = await start_lesson(
+            course_title=course["title"],
+            module_title=module["title"],
+            lesson_title=lesson["title"],
+        )
+        await save_message(user_db_id, course_id, module_id, lesson_id, "assistant", intro)
+        await callback.message.answer(intro)
+    except Exception:
+        await callback.message.answer("⚠️ Не удалось подключиться к репетитору. Попробуй позже.")
 
 
 @router.callback_query(F.data.startswith("quiz:"))
