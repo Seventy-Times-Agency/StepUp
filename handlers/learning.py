@@ -21,12 +21,14 @@ async def exit_lesson(message: Message, state: FSMContext):
 @router.message(LearningState.in_lesson, F.text)
 async def handle_lesson_message(message: Message, state: FSMContext):
     data = await state.get_data()
-    course_id  = data["course_id"]
-    module_id  = data["module_id"]
-    lesson_id  = data["lesson_id"]
+    course_id     = data["course_id"]
+    module_id     = data["module_id"]
+    lesson_id     = data["lesson_id"]
     course_title  = data["course_title"]
     module_title  = data["module_title"]
     lesson_title  = data["lesson_title"]
+    lesson_plan   = data.get("lesson_plan", "")
+    lesson_terms  = data.get("lesson_terms", "")
 
     user_db_id = await get_or_create_user(
         telegram_id=message.from_user.id,
@@ -49,6 +51,8 @@ async def handle_lesson_message(message: Message, state: FSMContext):
             lesson_title=lesson_title,
             history=history,
             user_message=message.text,
+            lesson_plan=lesson_plan,
+            lesson_terms=lesson_terms,
         )
     except Exception as e:
         await thinking.delete()

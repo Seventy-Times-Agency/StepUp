@@ -38,8 +38,16 @@ async def _call(messages: list) -> str:
             return data["choices"][0]["message"]["content"]
 
 
-async def start_lesson(course_title: str, module_title: str, lesson_title: str) -> str:
-    system_prompt = get_lesson_system_prompt(course_title, module_title, lesson_title)
+async def start_lesson(
+    course_title: str,
+    module_title: str,
+    lesson_title: str,
+    lesson_plan: str = "",
+    lesson_terms: str = "",
+) -> str:
+    system_prompt = get_lesson_system_prompt(
+        course_title, module_title, lesson_title, lesson_plan, lesson_terms
+    )
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user",   "content": "Начинаем урок!"},
@@ -53,8 +61,12 @@ async def get_tutor_reply(
     lesson_title: str,
     history: list[dict],
     user_message: str,
+    lesson_plan: str = "",
+    lesson_terms: str = "",
 ) -> str:
-    system_prompt = get_lesson_system_prompt(course_title, module_title, lesson_title)
+    system_prompt = get_lesson_system_prompt(
+        course_title, module_title, lesson_title, lesson_plan, lesson_terms
+    )
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(history)
     messages.append({"role": "user", "content": user_message})

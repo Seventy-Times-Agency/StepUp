@@ -170,6 +170,8 @@ async def cb_begin_lesson(callback: CallbackQuery, state: FSMContext):
         course_title=course["title"],
         module_title=module["title"],
         lesson_title=lesson["title"],
+        lesson_plan=lesson.get("plan", ""),
+        lesson_terms=lesson.get("terms", ""),
     )
 
     await callback.message.answer(
@@ -190,6 +192,8 @@ async def cb_begin_lesson(callback: CallbackQuery, state: FSMContext):
             course_title=course["title"],
             module_title=module["title"],
             lesson_title=lesson["title"],
+            lesson_plan=lesson.get("plan", ""),
+            lesson_terms=lesson.get("terms", ""),
         )
         await save_message(user_db_id, course_id, module_id, lesson_id, "assistant", intro)
         await callback.message.answer(intro)
