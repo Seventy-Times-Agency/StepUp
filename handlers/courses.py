@@ -22,7 +22,9 @@ from database.db import (
     get_passed_modules,
     get_quiz_result,
     get_quiz_score,
+    get_user_profile,
     get_user_progress,
+    is_profile_complete,
     reset_quiz,
     save_message,
     save_quiz_answer,
@@ -30,6 +32,7 @@ from database.db import (
     start_course,
     update_lesson_progress,
 )
+from handlers import onboarding
 from keyboards.inline import (
     back_to_modules_kb,
     category_courses_kb,
@@ -225,14 +228,20 @@ async def cb_lesson(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("begin:"))
-async def cb_begin_lesson(callback: CallbackQuery, state: FSMContext):
-    _, course_id, module_id, lesson_id = callback.data.split(":")
+async def launch_lesson(
+    message,  # aiogram Message (.answer доступен)
+    state: FSMContext,
+    user_db_id: int,
+    course_id: str,
+    module_id: str,
+    lesson_id: str,
+) -> None:
+    """Ставит FSM-стейт, зовёт AI, отправляет приветственное сообщение."""
     course = COURSES_BY_ID.get(course_id)
     module = get_module(course_id, module_id)
     lesson = get_lesson(course_id, module_id, lesson_id)
-    if not lesson:
-        await callback.answer("Урок не найден", show_alert=True)
+    if not (course and module and lesson):
+        await message.answer("⚠️ Урок не найден")
         return
 
     await state.set_state(LearningState.in_lesson)
@@ -247,22 +256,17 @@ async def cb_begin_lesson(callback: CallbackQuery, state: FSMContext):
         lesson_terms=lesson.get("terms", ""),
     )
 
-    await callback.message.answer(
-        f"📖 *{lesson['title']}*\n\nРепетитор начинает урок...",
+    await message.answer(
+        f"📖 *{lesson['title']}*\n\nРепетитор настраивается под тебя...",
         reply_markup=lesson_kb(),
         parse_mode="Markdown",
-    )
-    await callback.answer()
-
-    user_db_id = await get_or_create_user(
-        telegram_id=callback.from_user.id,
-        username=callback.from_user.username or "",
-        full_name=callback.from_user.full_name or "",
     )
     await update_lesson_progress(user_db_id, course_id, module_id, lesson_id)
 
     try:
+        from ai.tutor import strip_done_marker
         student_history = await get_course_summaries(user_db_id, course_id)
+        student_profile = await get_user_profile(user_db_id)
         intro = await start_lesson(
             course_title=course["title"],
             module_title=module["title"],
@@ -270,14 +274,41 @@ async def cb_begin_lesson(callback: CallbackQuery, state: FSMContext):
             lesson_plan=lesson.get("plan", ""),
             lesson_terms=lesson.get("terms", ""),
             student_history=student_history or None,
+            student_profile=student_profile,
         )
-        await save_message(user_db_id, course_id, module_id, lesson_id, "assistant", intro)
-        await callback.message.answer(intro)
+        cleaned, _ = strip_done_marker(intro)
+        await save_message(user_db_id, course_id, module_id, lesson_id, "assistant", cleaned)
+        await message.answer(cleaned)
     except Exception as e:
         log.error("Tutor start_lesson error: %s", e)
-        await callback.message.answer(
+        await message.answer(
             "⚠️ Не удалось подключиться к репетитору. Проверь OPENROUTER_API_KEY в настройках."
         )
+
+
+@router.callback_query(F.data.startswith("begin:"))
+async def cb_begin_lesson(callback: CallbackQuery, state: FSMContext):
+    _, course_id, module_id, lesson_id = callback.data.split(":")
+    if not get_lesson(course_id, module_id, lesson_id):
+        await callback.answer("Урок не найден", show_alert=True)
+        return
+
+    user_db_id = await get_or_create_user(
+        telegram_id=callback.from_user.id,
+        username=callback.from_user.username or "",
+        full_name=callback.from_user.full_name or "",
+    )
+
+    await callback.answer()
+
+    # Первый урок — сначала короткая диагностика
+    if not await is_profile_complete(user_db_id):
+        await onboarding.start_onboarding(
+            callback.message, state, course_id, module_id, lesson_id
+        )
+        return
+
+    await launch_lesson(callback.message, state, user_db_id, course_id, module_id, lesson_id)
 
 
 # ==========================

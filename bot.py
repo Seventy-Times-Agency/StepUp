@@ -6,7 +6,7 @@ from aiogram import Bot, Dispatcher
 from config import BOT_TOKEN, DB_PATH
 from database.db import init_db
 from database.storage import SQLiteStorage
-from handlers import courses, learning, start
+from handlers import courses, learning, onboarding, start
 
 
 async def main():
@@ -19,9 +19,11 @@ async def main():
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher(storage=storage)
 
-    # learning — первым: он перехватывает сообщения во время урока
+    # learning — первым: перехватывает сообщения во время урока
     # (включая /start и /menu, чтобы корректно сбросить состояние)
     dp.include_router(learning.router)
+    # onboarding — до общих обработчиков: перехватывает ответы диагностики
+    dp.include_router(onboarding.router)
     dp.include_router(start.router)
     dp.include_router(courses.router)
 

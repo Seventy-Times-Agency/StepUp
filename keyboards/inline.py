@@ -106,6 +106,41 @@ def lesson_info_kb(
     ])
 
 
+ONBOARDING_EXP = [
+    ("🌱 Совсем новичок", "new"),
+    ("📚 Что-то читал, пробовал", "beginner"),
+    ("💼 Работаю в близкой сфере", "related"),
+    ("🚀 Уже в digital / маркетинге", "pro"),
+]
+
+ONBOARDING_GOAL = [
+    ("💰 Подработка / фриланс", "freelance"),
+    ("🔄 Сменить профессию", "career"),
+    ("🏢 Для своего бизнеса", "business"),
+    ("🧭 Просто развиваюсь", "curious"),
+]
+
+
+def onboarding_experience_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=label, callback_data=f"ob_exp:{code}")]
+        for label, code in ONBOARDING_EXP
+    ])
+
+
+def onboarding_goal_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=label, callback_data=f"ob_goal:{code}")]
+        for label, code in ONBOARDING_GOAL
+    ])
+
+
+def onboarding_skip_context_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➡️ Пропустить и начать урок", callback_data="ob_skip_ctx")],
+    ])
+
+
 def complete_lesson_kb(course_id: str, module_id: str, lesson_id: str) -> InlineKeyboardMarkup:
     """Инлайн-кнопка которая появляется когда AI сигналит об окончании урока."""
     return InlineKeyboardMarkup(inline_keyboard=[

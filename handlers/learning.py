@@ -6,7 +6,7 @@ from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from ai.tutor import generate_lesson_summary, get_tutor_reply
+from ai.tutor import generate_lesson_summary, get_tutor_reply, strip_done_marker
 from content.courses import (
     COURSES_BY_ID,
     get_lesson,
@@ -21,6 +21,7 @@ from database.db import (
     get_course_summaries,
     get_or_create_user,
     get_quiz_result,
+    get_user_profile,
     mark_course_completed,
     save_lesson_summary,
     save_message,
@@ -36,19 +37,10 @@ from states.learning import LearningState
 log = logging.getLogger(__name__)
 router = Router()
 
-DONE_MARKER = "[LESSON_DONE]"
-
 
 # ==========================
 # Вспомогательные функции
 # ==========================
-
-def _strip_done_marker(text: str) -> tuple[str, bool]:
-    """Вытаскивает маркер окончания урока. Возвращает (очищенный_текст, done_flag)."""
-    if DONE_MARKER in text:
-        cleaned = text.replace(DONE_MARKER, "").rstrip()
-        return cleaned, True
-    return text, False
 
 
 async def _generate_and_save_summary(user_db_id: int, data: dict) -> None:
@@ -196,6 +188,7 @@ async def handle_lesson_message(message: Message, state: FSMContext):
 
     thinking = await message.answer("✍️ Репетитор печатает...")
     student_history = await get_course_summaries(user_db_id, course_id)
+    student_profile = await get_user_profile(user_db_id)
 
     try:
         reply = await get_tutor_reply(
@@ -207,6 +200,7 @@ async def handle_lesson_message(message: Message, state: FSMContext):
             lesson_plan=lesson_plan,
             lesson_terms=lesson_terms,
             student_history=student_history or None,
+            student_profile=student_profile,
         )
     except Exception as e:
         log.error("Tutor reply error: %s", e)
@@ -216,7 +210,7 @@ async def handle_lesson_message(message: Message, state: FSMContext):
 
     await thinking.delete()
 
-    cleaned, is_done = _strip_done_marker(reply)
+    cleaned, is_done = strip_done_marker(reply)
     # В БД сохраняем уже очищенный вариант
     await save_message(user_db_id, course_id, module_id, lesson_id, "assistant", cleaned)
 

@@ -5,6 +5,16 @@ from ai.prompts import get_lesson_system_prompt, get_summary_prompt
 
 log = logging.getLogger(__name__)
 
+DONE_MARKER = "[LESSON_DONE]"
+
+
+def strip_done_marker(text: str) -> tuple[str, bool]:
+    """Вытаскивает служебный маркер окончания урока.
+    Возвращает (очищенный_текст, done_flag)."""
+    if DONE_MARKER in text:
+        return text.replace(DONE_MARKER, "").rstrip(), True
+    return text, False
+
 HEADERS = {
     "Content-Type": "application/json",
     "HTTP-Referer": "https://stepup-bot.railway.app",
@@ -20,7 +30,7 @@ async def _call(messages: list) -> str:
     payload = {
         "model": OPENROUTER_MODEL,
         "messages": messages,
-        "max_tokens": 600,
+        "max_tokens": 1200,
         "temperature": 0.7,
     }
 
@@ -45,9 +55,13 @@ async def start_lesson(
     lesson_plan: str = "",
     lesson_terms: str = "",
     student_history: list[dict] | None = None,
+    student_profile: dict | None = None,
 ) -> str:
     system_prompt = get_lesson_system_prompt(
-        course_title, module_title, lesson_title, lesson_plan, lesson_terms, student_history
+        course_title, module_title, lesson_title,
+        lesson_plan, lesson_terms,
+        student_history=student_history,
+        student_profile=student_profile,
     )
     messages = [
         {"role": "system", "content": system_prompt},
@@ -65,9 +79,13 @@ async def get_tutor_reply(
     lesson_plan: str = "",
     lesson_terms: str = "",
     student_history: list[dict] | None = None,
+    student_profile: dict | None = None,
 ) -> str:
     system_prompt = get_lesson_system_prompt(
-        course_title, module_title, lesson_title, lesson_plan, lesson_terms, student_history
+        course_title, module_title, lesson_title,
+        lesson_plan, lesson_terms,
+        student_history=student_history,
+        student_profile=student_profile,
     )
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(history)

@@ -83,6 +83,16 @@ async def init_db():
                 UNIQUE(user_id, course_id, module_id)
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS user_profiles (
+                user_id INTEGER PRIMARY KEY,
+                experience TEXT,
+                goal TEXT,
+                context TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        """)
         # Migrate existing progress table if columns missing
         try:
             await db.execute("ALTER TABLE progress ADD COLUMN last_module_id TEXT DEFAULT NULL")
@@ -363,6 +373,60 @@ async def get_quiz_result(
         if not row:
             return None
         return {"score": row[0], "total": row[1], "passed": bool(row[2])}
+
+
+# ==========================
+# Профиль студента
+# ==========================
+
+async def save_user_profile(
+    user_id: int,
+    experience: str | None = None,
+    goal: str | None = None,
+    context: str | None = None,
+) -> None:
+    """UPSERT профиля — передавай только заполняемые поля, остальные не трогаются."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT experience, goal, context FROM user_profiles WHERE user_id = ?",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        cur_exp, cur_goal, cur_ctx = row if row else (None, None, None)
+        new_exp = experience if experience is not None else cur_exp
+        new_goal = goal if goal is not None else cur_goal
+        new_ctx = context if context is not None else cur_ctx
+        await db.execute(
+            """INSERT INTO user_profiles (user_id, experience, goal, context)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(user_id) DO UPDATE SET
+                   experience = excluded.experience,
+                   goal = excluded.goal,
+                   context = excluded.context,
+                   updated_at = CURRENT_TIMESTAMP""",
+            (user_id, new_exp, new_goal, new_ctx),
+        )
+        await db.commit()
+
+
+async def get_user_profile(user_id: int) -> dict | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT experience, goal, context FROM user_profiles WHERE user_id = ?",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        if not any(row):
+            return None
+        return {"experience": row[0], "goal": row[1], "context": row[2]}
+
+
+async def is_profile_complete(user_id: int) -> bool:
+    """Профиль считается заполненным если есть опыт и цель (context необязателен)."""
+    profile = await get_user_profile(user_id)
+    return bool(profile and profile.get("experience") and profile.get("goal"))
 
 
 async def get_passed_modules(user_id: int, course_id: str) -> set:
