@@ -55,6 +55,34 @@ async def init_db():
                 UNIQUE(user_id, course_id, module_id, lesson_id)
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS quiz_answers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                course_id TEXT NOT NULL,
+                module_id TEXT NOT NULL,
+                q_idx INTEGER NOT NULL,
+                chosen INTEGER NOT NULL,
+                is_correct INTEGER NOT NULL,
+                answered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                UNIQUE(user_id, course_id, module_id, q_idx)
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS quiz_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                course_id TEXT NOT NULL,
+                module_id TEXT NOT NULL,
+                score INTEGER NOT NULL,
+                total INTEGER NOT NULL,
+                passed INTEGER NOT NULL,
+                completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                UNIQUE(user_id, course_id, module_id)
+            )
+        """)
         # Migrate existing progress table if columns missing
         try:
             await db.execute("ALTER TABLE progress ADD COLUMN last_module_id TEXT DEFAULT NULL")
@@ -227,3 +255,122 @@ async def clear_conversation(
             (user_id, course_id, module_id, lesson_id),
         )
         await db.commit()
+
+
+# ==========================
+# Отметки о прохождении
+# ==========================
+
+async def get_completed_lesson_keys(user_id: int, course_id: str) -> set:
+    """Возвращает множество кортежей (module_id, lesson_id) пройденных уроков."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            """SELECT module_id, lesson_id FROM lesson_summaries
+               WHERE user_id = ? AND course_id = ?""",
+            (user_id, course_id),
+        )
+        rows = await cursor.fetchall()
+        return {(row[0], row[1]) for row in rows}
+
+
+async def mark_course_completed(user_id: int, course_id: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """UPDATE progress SET completed = 1, updated_at = CURRENT_TIMESTAMP
+               WHERE user_id = ? AND course_id = ?""",
+            (user_id, course_id),
+        )
+        await db.commit()
+
+
+# ==========================
+# Тесты
+# ==========================
+
+async def reset_quiz(user_id: int, course_id: str, module_id: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """DELETE FROM quiz_answers
+               WHERE user_id = ? AND course_id = ? AND module_id = ?""",
+            (user_id, course_id, module_id),
+        )
+        await db.execute(
+            """DELETE FROM quiz_results
+               WHERE user_id = ? AND course_id = ? AND module_id = ?""",
+            (user_id, course_id, module_id),
+        )
+        await db.commit()
+
+
+async def save_quiz_answer(
+    user_id: int, course_id: str, module_id: str,
+    q_idx: int, chosen: int, is_correct: bool,
+) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """INSERT INTO quiz_answers
+               (user_id, course_id, module_id, q_idx, chosen, is_correct)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(user_id, course_id, module_id, q_idx) DO UPDATE SET
+                   chosen = excluded.chosen,
+                   is_correct = excluded.is_correct,
+                   answered_at = CURRENT_TIMESTAMP""",
+            (user_id, course_id, module_id, q_idx, chosen, int(is_correct)),
+        )
+        await db.commit()
+
+
+async def get_quiz_score(user_id: int, course_id: str, module_id: str) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            """SELECT COALESCE(SUM(is_correct), 0) FROM quiz_answers
+               WHERE user_id = ? AND course_id = ? AND module_id = ?""",
+            (user_id, course_id, module_id),
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+
+async def save_quiz_result(
+    user_id: int, course_id: str, module_id: str,
+    score: int, total: int, passed: bool,
+) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """INSERT INTO quiz_results
+               (user_id, course_id, module_id, score, total, passed)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(user_id, course_id, module_id) DO UPDATE SET
+                   score = excluded.score,
+                   total = excluded.total,
+                   passed = excluded.passed,
+                   completed_at = CURRENT_TIMESTAMP""",
+            (user_id, course_id, module_id, score, total, int(passed)),
+        )
+        await db.commit()
+
+
+async def get_quiz_result(
+    user_id: int, course_id: str, module_id: str,
+) -> dict | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            """SELECT score, total, passed FROM quiz_results
+               WHERE user_id = ? AND course_id = ? AND module_id = ?""",
+            (user_id, course_id, module_id),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return {"score": row[0], "total": row[1], "passed": bool(row[2])}
+
+
+async def get_passed_modules(user_id: int, course_id: str) -> set:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            """SELECT module_id FROM quiz_results
+               WHERE user_id = ? AND course_id = ? AND passed = 1""",
+            (user_id, course_id),
+        )
+        rows = await cursor.fetchall()
+        return {row[0] for row in rows}

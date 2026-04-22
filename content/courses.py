@@ -323,3 +323,190 @@ COURSES_BY_ID = {c["id"]: c for c in COURSES}
 
 def get_courses_by_category(category_id: str) -> list:
     return [c for c in COURSES if c["category"] == category_id]
+
+
+# ==========================
+# Тесты по модулям
+# Формат: {"course_id": {"module_id": [{"q": str, "options": [str], "correct": int}, ...]}}
+# Проходной балл — 2 из 3.
+# ==========================
+
+QUIZ_PASS_THRESHOLD = 2  # минимум правильных ответов из 3
+
+QUIZZES = {
+    "intro": {
+        "m1": [
+            {
+                "q": "Главное отличие digital-маркетинга от офлайн-рекламы?",
+                "options": [
+                    "Он всегда дешевле",
+                    "Можно измерить каждое действие пользователя",
+                    "Его делают только крупные компании",
+                    "Он работает только для молодой аудитории",
+                ],
+                "correct": 1,
+            },
+            {
+                "q": "Что такое воронка продаж?",
+                "options": [
+                    "Реклама в интернете",
+                    "Рекламный бюджет на месяц",
+                    "Путь клиента от знакомства с брендом до покупки",
+                    "Отдел маркетинга в компании",
+                ],
+                "correct": 2,
+            },
+            {
+                "q": "T-shaped специалист — это...",
+                "options": [
+                    "Специалист только в одной узкой области",
+                    "Универсал без глубоких знаний",
+                    "Глубина в одной профессии + понимание смежных",
+                    "Руководитель маркетингового отдела",
+                ],
+                "correct": 2,
+            },
+        ],
+        "m2": [
+            {
+                "q": "Что важнее для бизнес-аккаунта в соцсетях?",
+                "options": [
+                    "10 000 подписчиков с 1% вовлечённостью",
+                    "1 000 подписчиков с 10% вовлечённостью",
+                    "Количество подписчиков, вовлечённость неважна",
+                    "Красивая лента без подписчиков",
+                ],
+                "correct": 1,
+            },
+            {
+                "q": "ROAS — это...",
+                "options": [
+                    "Стоимость одного клика",
+                    "Количество показов рекламы",
+                    "Возврат на рекламные инвестиции",
+                    "Процент кликов от показов",
+                ],
+                "correct": 2,
+            },
+            {
+                "q": "В чём ключевая разница контент-маркетинга и копирайтинга?",
+                "options": [
+                    "Это одно и то же",
+                    "Контент — это видео, копирайтинг — текст",
+                    "Контент строит доверие долго, копирайтинг конвертирует здесь и сейчас",
+                    "Копирайтинг — только для сайтов",
+                ],
+                "correct": 2,
+            },
+        ],
+        "m3": [
+            {
+                "q": "Что такое no-code?",
+                "options": [
+                    "Бесплатный софт для дизайна",
+                    "Создание автоматизаций и интеграций без написания кода",
+                    "Новый язык программирования",
+                    "Сервис для хостинга сайтов",
+                ],
+                "correct": 1,
+            },
+            {
+                "q": "Какой принцип лучше описывает роль AI в работе специалиста?",
+                "options": [
+                    "AI заменит всех специалистов",
+                    "AI убирает специалистов без AI, а не всех специалистов",
+                    "AI бесполезен для маркетинга",
+                    "AI работает полностью сам, без участия человека",
+                ],
+                "correct": 1,
+            },
+            {
+                "q": "Вайб-кодинг — это...",
+                "options": [
+                    "Программирование под музыку",
+                    "Создание кода через диалог с AI без глубокого знания программирования",
+                    "Конкурсы программистов",
+                    "Устаревший способ разработки",
+                ],
+                "correct": 1,
+            },
+        ],
+    }
+}
+
+
+# ==========================
+# Хелперы навигации
+# ==========================
+
+def get_lesson(course_id: str, module_id: str, lesson_id: str):
+    course = COURSES_BY_ID.get(course_id)
+    if not course:
+        return None
+    module = next((m for m in course["modules"] if m["id"] == module_id), None)
+    if not module:
+        return None
+    return next((l for l in module["lessons"] if l["id"] == lesson_id), None)
+
+
+def get_module(course_id: str, module_id: str):
+    course = COURSES_BY_ID.get(course_id)
+    if not course:
+        return None
+    return next((m for m in course["modules"] if m["id"] == module_id), None)
+
+
+def get_next_lesson(course_id: str, module_id: str, lesson_id: str) -> dict | None:
+    """Возвращает информацию о следующем уроке или None если курс пройден.
+    Формат: {module_id, lesson_id, title, is_first_of_next_module}
+    """
+    course = COURSES_BY_ID.get(course_id)
+    if not course:
+        return None
+    modules = course["modules"]
+    for m_idx, module in enumerate(modules):
+        if module["id"] != module_id:
+            continue
+        lessons = module["lessons"]
+        for l_idx, lesson in enumerate(lessons):
+            if lesson["id"] != lesson_id:
+                continue
+            # следующий урок в том же модуле
+            if l_idx + 1 < len(lessons):
+                nxt = lessons[l_idx + 1]
+                return {
+                    "module_id": module_id,
+                    "lesson_id": nxt["id"],
+                    "title": nxt["title"],
+                    "is_first_of_next_module": False,
+                }
+            # первый урок следующего модуля
+            if m_idx + 1 < len(modules):
+                nxt_module = modules[m_idx + 1]
+                nxt = nxt_module["lessons"][0]
+                return {
+                    "module_id": nxt_module["id"],
+                    "lesson_id": nxt["id"],
+                    "title": nxt["title"],
+                    "is_first_of_next_module": True,
+                }
+            return None
+    return None
+
+
+def is_last_lesson_of_module(course_id: str, module_id: str, lesson_id: str) -> bool:
+    module = get_module(course_id, module_id)
+    if not module or not module["lessons"]:
+        return False
+    return module["lessons"][-1]["id"] == lesson_id
+
+
+def total_lessons_in_course(course_id: str) -> int:
+    course = COURSES_BY_ID.get(course_id)
+    if not course:
+        return 0
+    return sum(len(m["lessons"]) for m in course["modules"])
+
+
+def get_quiz_questions(course_id: str, module_id: str) -> list:
+    return QUIZZES.get(course_id, {}).get(module_id, [])

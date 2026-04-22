@@ -1,21 +1,30 @@
 import asyncio
+import logging
+
 from aiogram import Bot, Dispatcher
-from aiogram.fsm.storage.memory import MemoryStorage
-from config import BOT_TOKEN
+
+from config import BOT_TOKEN, DB_PATH
 from database.db import init_db
-from handlers import start, courses, learning
+from database.storage import SQLiteStorage
+from handlers import courses, learning, start
 
 
 async def main():
-    bot = Bot(token=BOT_TOKEN)
-    dp = Dispatcher(storage=MemoryStorage())
+    logging.basicConfig(level=logging.INFO)
 
-    # learning должен быть первым — он перехватывает сообщения во время урока
+    await init_db()
+    storage = SQLiteStorage(DB_PATH)
+    await storage.init()
+
+    bot = Bot(token=BOT_TOKEN)
+    dp = Dispatcher(storage=storage)
+
+    # learning — первым: он перехватывает сообщения во время урока
+    # (включая /start и /menu, чтобы корректно сбросить состояние)
     dp.include_router(learning.router)
     dp.include_router(start.router)
     dp.include_router(courses.router)
 
-    await init_db()
     await dp.start_polling(bot, skip_updates=True)
 
 

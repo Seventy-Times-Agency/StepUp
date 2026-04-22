@@ -1,19 +1,48 @@
 import logging
-from aiogram import Router, F
+
+from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, CallbackQuery
-from content.courses import COURSES_BY_ID, CATEGORIES_BY_BTN, CATEGORIES_BY_ID
+from aiogram.types import CallbackQuery, Message
+
+from ai.tutor import start_lesson
+from content.courses import (
+    CATEGORIES_BY_BTN,
+    COURSES_BY_ID,
+    QUIZ_PASS_THRESHOLD,
+    get_lesson,
+    get_module,
+    get_quiz_questions,
+    total_lessons_in_course,
+)
+from database.db import (
+    get_completed_lesson_keys,
+    get_course_summaries,
+    get_last_lesson,
+    get_or_create_user,
+    get_passed_modules,
+    get_quiz_result,
+    get_quiz_score,
+    get_user_progress,
+    reset_quiz,
+    save_message,
+    save_quiz_answer,
+    save_quiz_result,
+    start_course,
+    update_lesson_progress,
+)
 from keyboards.inline import (
-    category_courses_kb, course_detail_kb,
-    modules_kb, lessons_kb, lesson_info_kb, back_to_modules_kb,
+    back_to_modules_kb,
+    category_courses_kb,
+    course_detail_kb,
+    lesson_info_kb,
+    lessons_kb,
+    modules_kb,
+    quiz_next_kb,
+    quiz_question_kb,
+    quiz_result_kb,
 )
 from keyboards.reply import lesson_kb
-from database.db import (
-    get_or_create_user, get_user_progress, start_course, save_message,
-    get_last_lesson, update_lesson_progress, get_course_summaries,
-)
 from states.learning import LearningState
-from ai.tutor import start_lesson
 
 log = logging.getLogger(__name__)
 router = Router()
@@ -60,20 +89,36 @@ async def msg_progress(message: Message):
             "Ты ещё не начал ни одного курса.\n\n"
             "Начни с бесплатного *«Первый шаг»* 👇"
         )
-    else:
-        lines = ["📊 *Мой прогресс*\n"]
-        for course_id, data in progress.items():
-            course = COURSES_BY_ID.get(course_id)
-            if course:
-                status = "✅ Завершён" if data["completed"] else f"📖 Урок {data['lesson_id'] + 1}"
-                lines.append(f"{course['emoji']} {course['title']}: {status}")
-        text = "\n".join(lines)
+        await message.answer(text, parse_mode="Markdown")
+        return
 
-    await message.answer(text, parse_mode="Markdown")
+    lines = ["📊 *Мой прогресс*\n"]
+    for course_id, data in progress.items():
+        course = COURSES_BY_ID.get(course_id)
+        if not course:
+            continue
+        total = total_lessons_in_course(course_id)
+        completed = await get_completed_lesson_keys(user_db_id, course_id)
+        passed = await get_passed_modules(user_db_id, course_id)
+        done_count = len(completed)
+
+        header = f"{course['emoji']} *{course['title']}*"
+        if data["completed"] or (total > 0 and done_count >= total):
+            status = f"  ✅ Завершён ({done_count}/{total} уроков)"
+        else:
+            status = f"  📖 Пройдено {done_count}/{total} уроков"
+        lines.append(f"{header}\n{status}")
+
+        quiz_modules = [m for m in course["modules"] if m.get("has_quiz")]
+        if quiz_modules:
+            passed_count = sum(1 for m in quiz_modules if m["id"] in passed)
+            lines.append(f"  🧪 Тесты: {passed_count}/{len(quiz_modules)} пройдено")
+
+    await message.answer("\n\n".join(lines), parse_mode="Markdown")
 
 
 # ==========================
-# Inline callbacks
+# Inline: навигация по курсу
 # ==========================
 
 @router.callback_query(F.data.startswith("course:"))
@@ -107,11 +152,20 @@ async def cb_modules(callback: CallbackQuery):
     )
     await start_course(user_db_id, course_id)
     last_lesson = await get_last_lesson(user_db_id, course_id)
-    text = f"📋 *{course['title']}*\n\n"
-    text += "Продолжи с места где остановился 👇" if last_lesson else "Выбери модуль:"
+    completed = await get_completed_lesson_keys(user_db_id, course_id)
+    passed = await get_passed_modules(user_db_id, course_id)
+
+    total = total_lessons_in_course(course_id)
+    progress_line = f"Пройдено: {len(completed)}/{total} уроков" if total else ""
+
+    text = f"📋 *{course['title']}*"
+    if progress_line:
+        text += f"\n_{progress_line}_"
+    text += "\n\nВыбери модуль:" if not last_lesson else "\n\nПродолжи с места где остановился 👇"
+
     await callback.message.edit_text(
         text,
-        reply_markup=modules_kb(course_id, last_lesson),
+        reply_markup=modules_kb(course_id, last_lesson, completed, passed),
         parse_mode="Markdown",
     )
     await callback.answer()
@@ -120,14 +174,22 @@ async def cb_modules(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("module:"))
 async def cb_module(callback: CallbackQuery):
     _, course_id, module_id = callback.data.split(":")
-    course = COURSES_BY_ID.get(course_id)
-    module = next((m for m in course["modules"] if m["id"] == module_id), None)
+    module = get_module(course_id, module_id)
     if not module:
         await callback.answer("Модуль не найден", show_alert=True)
         return
+    user_db_id = await get_or_create_user(
+        telegram_id=callback.from_user.id,
+        username=callback.from_user.username or "",
+        full_name=callback.from_user.full_name or "",
+    )
+    completed = await get_completed_lesson_keys(user_db_id, course_id)
+    quiz_res = await get_quiz_result(user_db_id, course_id, module_id)
+    quiz_passed = bool(quiz_res and quiz_res["passed"])
+
     await callback.message.edit_text(
         f"{module['emoji']} *{module['title']}*\n\nВыбери урок:",
-        reply_markup=lessons_kb(course_id, module_id),
+        reply_markup=lessons_kb(course_id, module_id, completed, quiz_passed),
         parse_mode="Markdown",
     )
     await callback.answer()
@@ -135,23 +197,29 @@ async def cb_module(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("lesson:"))
 async def cb_lesson(callback: CallbackQuery):
-    """Показываем страницу урока с описанием — без запуска репетитора."""
     _, course_id, module_id, lesson_id = callback.data.split(":")
-    course = COURSES_BY_ID.get(course_id)
-    module = next((m for m in course["modules"] if m["id"] == module_id), None)
-    lesson = next((l for l in module["lessons"] if l["id"] == lesson_id), None)
+    lesson = get_lesson(course_id, module_id, lesson_id)
     if not lesson:
         await callback.answer("Урок не найден", show_alert=True)
         return
 
+    user_db_id = await get_or_create_user(
+        telegram_id=callback.from_user.id,
+        username=callback.from_user.username or "",
+        full_name=callback.from_user.full_name or "",
+    )
+    completed = await get_completed_lesson_keys(user_db_id, course_id)
+    is_done = (module_id, lesson_id) in completed
+    status = "✅ Урок пройден\n\n" if is_done else ""
+
     text = (
         f"📖 *{lesson['title']}*\n\n"
-        f"{lesson['description']}\n\n"
+        f"{status}{lesson['description']}\n\n"
         f"✅ *Что получишь:*\n{lesson['outcome']}"
     )
     await callback.message.edit_text(
         text,
-        reply_markup=lesson_info_kb(course_id, module_id, lesson_id),
+        reply_markup=lesson_info_kb(course_id, module_id, lesson_id, is_done),
         parse_mode="Markdown",
     )
     await callback.answer()
@@ -159,11 +227,10 @@ async def cb_lesson(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("begin:"))
 async def cb_begin_lesson(callback: CallbackQuery, state: FSMContext):
-    """Запускаем ИИ-репетитора — только после нажатия 'Начать урок'."""
     _, course_id, module_id, lesson_id = callback.data.split(":")
     course = COURSES_BY_ID.get(course_id)
-    module = next((m for m in course["modules"] if m["id"] == module_id), None)
-    lesson = next((l for l in module["lessons"] if l["id"] == lesson_id), None)
+    module = get_module(course_id, module_id)
+    lesson = get_lesson(course_id, module_id, lesson_id)
     if not lesson:
         await callback.answer("Урок не найден", show_alert=True)
         return
@@ -209,18 +276,136 @@ async def cb_begin_lesson(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         log.error("Tutor start_lesson error: %s", e)
         await callback.message.answer(
-            f"⚠️ Не удалось подключиться к репетитору.\n\n`{e}`\n\nПроверь OPENROUTER\\_API\\_KEY в настройках.",
-            parse_mode="Markdown",
+            "⚠️ Не удалось подключиться к репетитору. Проверь OPENROUTER_API_KEY в настройках."
         )
 
 
+# ==========================
+# Квизы
+# ==========================
+
+def _render_question(course_id: str, module_id: str, q_idx: int, q: dict) -> tuple[str, object]:
+    total = len(get_quiz_questions(course_id, module_id))
+    text = (
+        f"🧪 *Вопрос {q_idx + 1}/{total}*\n\n"
+        f"{q['q']}"
+    )
+    return text, quiz_question_kb(course_id, module_id, q_idx, q["options"])
+
+
 @router.callback_query(F.data.startswith("quiz:"))
-async def cb_quiz(callback: CallbackQuery):
+async def cb_quiz_start(callback: CallbackQuery):
     _, course_id, module_id = callback.data.split(":")
-    module = next((m for m in COURSES_BY_ID[course_id]["modules"] if m["id"] == module_id), None)
+    questions = get_quiz_questions(course_id, module_id)
+    module = get_module(course_id, module_id)
+
+    if not questions or not module:
+        await callback.message.edit_text(
+            "🧪 Тест пока недоступен.",
+            reply_markup=back_to_modules_kb(course_id, module_id),
+        )
+        await callback.answer()
+        return
+
+    user_db_id = await get_or_create_user(
+        telegram_id=callback.from_user.id,
+        username=callback.from_user.username or "",
+        full_name=callback.from_user.full_name or "",
+    )
+    await reset_quiz(user_db_id, course_id, module_id)
+
+    text, kb = _render_question(course_id, module_id, 0, questions[0])
+    intro = (
+        f"🧪 *Тест: {module['title']}*\n"
+        f"_Ответь правильно на {QUIZ_PASS_THRESHOLD} из {len(questions)}, чтобы пройти._\n\n"
+    )
+    await callback.message.edit_text(intro + text, reply_markup=kb, parse_mode="Markdown")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("qa:"))
+async def cb_quiz_answer(callback: CallbackQuery):
+    _, course_id, module_id, q_idx_s, chosen_s = callback.data.split(":")
+    q_idx = int(q_idx_s)
+    chosen = int(chosen_s)
+    questions = get_quiz_questions(course_id, module_id)
+    if q_idx >= len(questions):
+        await callback.answer("Вопрос не найден", show_alert=True)
+        return
+
+    q = questions[q_idx]
+    is_correct = chosen == q["correct"]
+
+    user_db_id = await get_or_create_user(
+        telegram_id=callback.from_user.id,
+        username=callback.from_user.username or "",
+        full_name=callback.from_user.full_name or "",
+    )
+    await save_quiz_answer(user_db_id, course_id, module_id, q_idx, chosen, is_correct)
+
+    if is_correct:
+        feedback = f"✅ *Верно!*\n\n{q['options'][q['correct']]}"
+    else:
+        feedback = (
+            f"❌ *Неверно.*\n\n"
+            f"Правильный ответ: *{q['options'][q['correct']]}*"
+        )
+
+    is_last = q_idx + 1 >= len(questions)
+    next_idx = q_idx + 1
     await callback.message.edit_text(
-        f"🧪 *Тест: {module['title']}*\n\n_Тесты появятся совсем скоро!_",
-        reply_markup=back_to_modules_kb(course_id, module_id),
+        feedback,
+        reply_markup=quiz_next_kb(course_id, module_id, next_idx, is_last),
+        parse_mode="Markdown",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("qn:"))
+async def cb_quiz_next(callback: CallbackQuery):
+    _, course_id, module_id, q_idx_s = callback.data.split(":")
+    q_idx = int(q_idx_s)
+    questions = get_quiz_questions(course_id, module_id)
+    if q_idx >= len(questions):
+        await callback.answer()
+        return
+
+    text, kb = _render_question(course_id, module_id, q_idx, questions[q_idx])
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("qr:"))
+async def cb_quiz_result(callback: CallbackQuery):
+    _, course_id, module_id, _ = callback.data.split(":")
+    questions = get_quiz_questions(course_id, module_id)
+    total = len(questions)
+    module = get_module(course_id, module_id)
+
+    user_db_id = await get_or_create_user(
+        telegram_id=callback.from_user.id,
+        username=callback.from_user.username or "",
+        full_name=callback.from_user.full_name or "",
+    )
+    score = await get_quiz_score(user_db_id, course_id, module_id)
+    passed = score >= QUIZ_PASS_THRESHOLD
+    await save_quiz_result(user_db_id, course_id, module_id, score, total, passed)
+
+    if passed:
+        text = (
+            f"🎉 *Тест пройден: {score}/{total}*\n\n"
+            f"Модуль «{module['title']}» закрыт ✅"
+        )
+    else:
+        text = (
+            f"😕 *Результат: {score}/{total}*\n\n"
+            f"Нужно минимум {QUIZ_PASS_THRESHOLD} из {total}. "
+            f"Пересмотри уроки модуля и попробуй ещё раз."
+        )
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=quiz_result_kb(course_id, module_id, passed),
         parse_mode="Markdown",
     )
     await callback.answer()
