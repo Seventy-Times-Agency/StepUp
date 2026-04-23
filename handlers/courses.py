@@ -22,9 +22,11 @@ from database.db import (
     get_passed_modules,
     get_quiz_result,
     get_quiz_score,
+    get_student_conspect,
     get_user_profile,
     get_user_progress,
     is_profile_complete,
+    list_user_conspects,
     reset_quiz,
     save_message,
     save_quiz_answer,
@@ -36,6 +38,8 @@ from handlers import onboarding
 from keyboards.inline import (
     back_to_modules_kb,
     category_courses_kb,
+    conspect_view_kb,
+    conspects_list_kb,
     course_detail_kb,
     lesson_info_kb,
     lessons_kb,
@@ -264,7 +268,7 @@ async def launch_lesson(
     await update_lesson_progress(user_db_id, course_id, module_id, lesson_id)
 
     try:
-        from ai.tutor import strip_done_marker
+        from ai.tutor import strip_done_marker, strip_phase_marker
         student_history = await get_course_summaries(user_db_id, course_id)
         student_profile = await get_user_profile(user_db_id)
         intro = await start_lesson(
@@ -276,9 +280,11 @@ async def launch_lesson(
             student_history=student_history or None,
             student_profile=student_profile,
         )
-        cleaned, _ = strip_done_marker(intro)
+        cleaned, phase = strip_phase_marker(intro)
+        cleaned, _ = strip_done_marker(cleaned)
         await save_message(user_db_id, course_id, module_id, lesson_id, "assistant", cleaned)
-        await message.answer(cleaned)
+        header = f"📍 Фаза {phase[0]} из {phase[1]}\n\n" if phase else ""
+        await message.answer(header + cleaned)
     except Exception as e:
         log.error("Tutor start_lesson error: %s", e)
         await message.answer(
@@ -445,3 +451,76 @@ async def cb_quiz_result(callback: CallbackQuery):
 @router.callback_query(F.data == "soon")
 async def cb_soon(callback: CallbackQuery):
     await callback.answer("Этот курс скоро будет доступен! 🔜", show_alert=True)
+
+
+# ==========================
+# Конспекты пройденных уроков
+# ==========================
+
+async def _render_conspects_list(message_or_cb, edit: bool = False):
+    user_db_id = await get_or_create_user(
+        telegram_id=message_or_cb.from_user.id,
+        username=message_or_cb.from_user.username or "",
+        full_name=message_or_cb.from_user.full_name or "",
+    )
+    items = await list_user_conspects(user_db_id)
+    if not items:
+        text = (
+            "📝 *Мои конспекты*\n\n"
+            "Пока что тут пусто. Заверши хотя бы один урок — и конспект появится здесь."
+        )
+        if edit:
+            await message_or_cb.message.edit_text(text, parse_mode="Markdown")
+        else:
+            await message_or_cb.answer(text, parse_mode="Markdown")
+        return
+
+    text = (
+        "📝 *Мои конспекты*\n\n"
+        "Короткая выжимка из каждого урока — чтобы вспомнить главное. Выбери урок:"
+    )
+    kb = conspects_list_kb(items)
+    if edit:
+        await message_or_cb.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+    else:
+        await message_or_cb.answer(text, reply_markup=kb, parse_mode="Markdown")
+
+
+@router.message(F.text == "📝 Конспекты")
+async def msg_conspects(message: Message):
+    await _render_conspects_list(message, edit=False)
+
+
+@router.callback_query(F.data == "csp_list")
+async def cb_conspects_list(callback: CallbackQuery):
+    await _render_conspects_list(callback, edit=True)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("csp:"))
+async def cb_conspect_view(callback: CallbackQuery):
+    _, course_id, module_id, lesson_id = callback.data.split(":")
+    user_db_id = await get_or_create_user(
+        telegram_id=callback.from_user.id,
+        username=callback.from_user.username or "",
+        full_name=callback.from_user.full_name or "",
+    )
+    lesson = get_lesson(course_id, module_id, lesson_id)
+    title = lesson["title"] if lesson else lesson_id
+    conspect = await get_student_conspect(user_db_id, course_id, module_id, lesson_id)
+
+    if not conspect:
+        text = (
+            f"📝 *{title}*\n\n"
+            "Для этого урока пока нет конспекта — возможно, он был завершён без "
+            "диалога. Можешь пройти урок заново — конспект сгенерируется."
+        )
+    else:
+        text = f"📝 *{title}*\n\n{conspect}"
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=conspect_view_kb(),
+        parse_mode="Markdown",
+    )
+    await callback.answer()

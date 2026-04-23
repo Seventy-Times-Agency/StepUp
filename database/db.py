@@ -102,6 +102,11 @@ async def init_db():
             await db.execute("ALTER TABLE progress ADD COLUMN last_lesson_id TEXT DEFAULT NULL")
         except Exception:
             pass
+        # Колонка с конспектом-для-студента (отличается от internal summary)
+        try:
+            await db.execute("ALTER TABLE lesson_summaries ADD COLUMN student_conspect TEXT")
+        except Exception:
+            pass
         await db.commit()
 
 
@@ -191,16 +196,90 @@ async def save_lesson_summary(
     lesson_id: str,
     lesson_title: str,
     summary: str,
+    student_conspect: str | None = None,
 ):
-    """Сохраняет AI-резюме после завершения урока."""
+    """Сохраняет AI-резюме (для памяти тьютора) и при наличии — конспект для студента."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        if student_conspect is None:
+            await db.execute(
+                """INSERT INTO lesson_summaries
+                   (user_id, course_id, module_id, lesson_id, lesson_title, summary)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(user_id, course_id, module_id, lesson_id) DO UPDATE SET
+                       summary = excluded.summary,
+                       lesson_title = excluded.lesson_title,
+                       completed_at = CURRENT_TIMESTAMP""",
+                (user_id, course_id, module_id, lesson_id, lesson_title, summary),
+            )
+        else:
+            await db.execute(
+                """INSERT INTO lesson_summaries
+                   (user_id, course_id, module_id, lesson_id, lesson_title, summary, student_conspect)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(user_id, course_id, module_id, lesson_id) DO UPDATE SET
+                       summary = excluded.summary,
+                       student_conspect = excluded.student_conspect,
+                       lesson_title = excluded.lesson_title,
+                       completed_at = CURRENT_TIMESTAMP""",
+                (user_id, course_id, module_id, lesson_id, lesson_title, summary, student_conspect),
+            )
+        await db.commit()
+
+
+async def save_student_conspect(
+    user_id: int,
+    course_id: str,
+    module_id: str,
+    lesson_id: str,
+    conspect: str,
+) -> None:
+    """Отдельное обновление только конспекта-для-студента."""
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            """INSERT OR REPLACE INTO lesson_summaries
-               (user_id, course_id, module_id, lesson_id, lesson_title, summary)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (user_id, course_id, module_id, lesson_id, lesson_title, summary),
+            """UPDATE lesson_summaries SET student_conspect = ?
+               WHERE user_id = ? AND course_id = ? AND module_id = ? AND lesson_id = ?""",
+            (conspect, user_id, course_id, module_id, lesson_id),
         )
         await db.commit()
+
+
+async def get_student_conspect(
+    user_id: int, course_id: str, module_id: str, lesson_id: str,
+) -> str | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            """SELECT student_conspect FROM lesson_summaries
+               WHERE user_id = ? AND course_id = ? AND module_id = ? AND lesson_id = ?""",
+            (user_id, course_id, module_id, lesson_id),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row and row[0] else None
+
+
+async def list_user_conspects(user_id: int) -> list[dict]:
+    """Все уроки студента с конспектом, отсортированные по дате завершения."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            """SELECT course_id, module_id, lesson_id, lesson_title, completed_at,
+                      CASE WHEN student_conspect IS NOT NULL AND student_conspect != ''
+                           THEN 1 ELSE 0 END AS has_conspect
+               FROM lesson_summaries
+               WHERE user_id = ?
+               ORDER BY completed_at DESC""",
+            (user_id,),
+        )
+        rows = await cursor.fetchall()
+        return [
+            {
+                "course_id": r[0],
+                "module_id": r[1],
+                "lesson_id": r[2],
+                "lesson_title": r[3],
+                "completed_at": r[4],
+                "has_conspect": bool(r[5]),
+            }
+            for r in rows
+        ]
 
 
 async def get_course_summaries(user_id: int, course_id: str) -> list[dict]:

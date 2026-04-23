@@ -236,6 +236,24 @@ def quiz_result_kb(course_id: str, module_id: str, passed: bool) -> InlineKeyboa
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
+def conspects_list_kb(items: list[dict]) -> InlineKeyboardMarkup:
+    """items: [{'course_id', 'module_id', 'lesson_id', 'lesson_title', 'has_conspect'}]"""
+    buttons = []
+    for item in items:
+        mark = "📝" if item.get("has_conspect") else "📄"
+        buttons.append([InlineKeyboardButton(
+            text=f"{mark} {item['lesson_title']}",
+            callback_data=f"csp:{item['course_id']}:{item['module_id']}:{item['lesson_id']}",
+        )])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def conspect_view_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ К списку конспектов", callback_data="csp_list")],
+    ])
+
+
 def back_to_modules_kb(course_id: str, module_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⬅️ К урокам", callback_data=f"module:{course_id}:{module_id}")],

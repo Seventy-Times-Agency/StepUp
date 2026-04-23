@@ -1,11 +1,19 @@
 import logging
+import re
+
 import aiohttp
-from config import OPENROUTER_API_KEY, OPENROUTER_MODEL, OPENROUTER_BASE_URL
-from ai.prompts import get_lesson_system_prompt, get_summary_prompt
+
+from ai.prompts import (
+    get_lesson_system_prompt,
+    get_student_conspect_prompt,
+    get_summary_prompt,
+)
+from config import OPENROUTER_API_KEY, OPENROUTER_BASE_URL, OPENROUTER_MODEL
 
 log = logging.getLogger(__name__)
 
 DONE_MARKER = "[LESSON_DONE]"
+PHASE_RE = re.compile(r"\[PHASE:\s*(\d+)\s*/\s*(\d+)\s*\]")
 
 
 def strip_done_marker(text: str) -> tuple[str, bool]:
@@ -14,6 +22,17 @@ def strip_done_marker(text: str) -> tuple[str, bool]:
     if DONE_MARKER in text:
         return text.replace(DONE_MARKER, "").rstrip(), True
     return text, False
+
+
+def strip_phase_marker(text: str) -> tuple[str, tuple[int, int] | None]:
+    """Вытаскивает служебный маркер фазы [PHASE:X/N].
+    Возвращает (очищенный_текст, (X, N) | None)."""
+    match = PHASE_RE.search(text)
+    if not match:
+        return text, None
+    current, total = int(match.group(1)), int(match.group(2))
+    cleaned = PHASE_RE.sub("", text, count=1).lstrip("\n").lstrip()
+    return cleaned, (current, total)
 
 HEADERS = {
     "Content-Type": "application/json",
@@ -106,3 +125,26 @@ async def generate_lesson_summary(lesson_title: str, history: list[dict]) -> str
         return await _call(messages)
     except Exception:
         return f"Урок '{lesson_title}' пройден."
+
+
+async def generate_student_conspect(lesson_title: str, history: list[dict]) -> str:
+    """Генерирует конспект урока ДЛЯ СТУДЕНТА — тот, что покажется в UI."""
+    if not history:
+        return (
+            f"🎯 Урок «{lesson_title}» был начат, но вы не успели разобрать материал. "
+            "Пройди его заново — получишь полноценный конспект."
+        )
+    messages = [
+        {"role": "system", "content": get_student_conspect_prompt(lesson_title)},
+        *history,
+        {"role": "user", "content": "Собери конспект этого урока по шаблону."},
+    ]
+    try:
+        raw = await _call(messages)
+        # На всякий случай — если модель всё-таки вставила служебные маркеры, уберём
+        raw, _ = strip_phase_marker(raw)
+        raw, _ = strip_done_marker(raw)
+        return raw
+    except Exception as e:
+        log.warning("Не удалось сгенерировать конспект: %s", e)
+        return f"🎯 Урок «{lesson_title}» пройден. Подробный конспект не удалось собрать — попробуй нажать «📝 Конспекты» позже."
