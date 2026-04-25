@@ -402,6 +402,7 @@ INTRO_MODULES = [
 INTRO_MODULES_BY_ID = {m["id"]: m for m in INTRO_MODULES}
 
 from content.paid_copy import COPY_COURSE, COPY_QUIZZES
+from content.paid_nocode import NOCODE_COURSE, NOCODE_QUIZZES
 from content.paid_smm import SMM_COURSE, SMM_QUIZZES
 from content.paid_target import TARGET_COURSE, TARGET_QUIZZES
 from content.paid_vibe import VIBE_COURSE, VIBE_QUIZZES
@@ -431,7 +432,7 @@ COURSES = [
     {"id": "ecom",      "title": "Маркетплейсы (e-com)",     "emoji": "🛒", "is_free": False, "category": "business",  "description": "Продажи на Ozon и Wildberries: карточки, реклама, масштабирование.", "modules": []},
     {"id": "freelance", "title": "Фриланс и продажа услуг",  "emoji": "💼", "is_free": False, "category": "business",  "description": "Упакуй себя как специалиста, найди клиентов и выстрой доход.", "modules": []},
     {"id": "brand",     "title": "Личный бренд",             "emoji": "⭐", "is_free": False, "category": "business",  "description": "Позиционирование, экспертность и монетизация личного бренда.", "modules": []},
-    {"id": "nocode",    "title": "No-code автоматизация",    "emoji": "🔧", "is_free": False, "category": "tech",      "description": "Make, n8n, Zapier — автоматизируй процессы без кода.", "modules": []},
+    NOCODE_COURSE,
     VIBE_COURSE,
 ]
 
@@ -455,6 +456,7 @@ QUIZZES = {
     "target": TARGET_QUIZZES,
     "vibe": VIBE_QUIZZES,
     "copy": COPY_QUIZZES,
+    "nocode": NOCODE_QUIZZES,
     "intro": {
         "m1": [
             {
