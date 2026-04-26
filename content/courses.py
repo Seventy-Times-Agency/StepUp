@@ -407,6 +407,7 @@ from content.paid_copy import COPY_COURSE, COPY_QUIZZES
 from content.paid_ecom import ECOM_COURSE, ECOM_QUIZZES
 from content.paid_email import EMAIL_COURSE, EMAIL_QUIZZES
 from content.paid_freelance import FREELANCE_COURSE, FREELANCE_QUIZZES
+from content.paid_influence import INFLUENCE_COURSE, INFLUENCE_QUIZZES
 from content.paid_nocode import NOCODE_COURSE, NOCODE_QUIZZES
 from content.paid_sales import SALES_COURSE, SALES_QUIZZES
 from content.paid_smm import SMM_COURSE, SMM_QUIZZES
@@ -433,7 +434,7 @@ COURSES = [
     CONTENT_COURSE,
     COPY_COURSE,
     EMAIL_COURSE,
-    {"id": "influence", "title": "Influence-маркетинг",      "emoji": "🌟", "is_free": False, "category": "promo",     "description": "Работа с блогерами, посевы, коллаборации и оценка эффективности.", "modules": []},
+    INFLUENCE_COURSE,
     SALES_COURSE,
     ECOM_COURSE,
     FREELANCE_COURSE,
@@ -469,6 +470,7 @@ QUIZZES = {
     "ecom": ECOM_QUIZZES,
     "content": CONTENT_QUIZZES,
     "email": EMAIL_QUIZZES,
+    "influence": INFLUENCE_QUIZZES,
     "intro": {
         "m1": [
             {
