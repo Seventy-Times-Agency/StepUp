@@ -402,6 +402,7 @@ INTRO_MODULES = [
 INTRO_MODULES_BY_ID = {m["id"]: m for m in INTRO_MODULES}
 
 from content.paid_copy import COPY_COURSE, COPY_QUIZZES
+from content.paid_freelance import FREELANCE_COURSE, FREELANCE_QUIZZES
 from content.paid_nocode import NOCODE_COURSE, NOCODE_QUIZZES
 from content.paid_smm import SMM_COURSE, SMM_QUIZZES
 from content.paid_target import TARGET_COURSE, TARGET_QUIZZES
@@ -430,7 +431,7 @@ COURSES = [
     {"id": "influence", "title": "Influence-маркетинг",      "emoji": "🌟", "is_free": False, "category": "promo",     "description": "Работа с блогерами, посевы, коллаборации и оценка эффективности.", "modules": []},
     {"id": "sales",     "title": "Автоматизация продаж",     "emoji": "⚙️", "is_free": False, "category": "business",  "description": "CRM, чат-боты, воронки продаж. Продавай системно и автоматически.", "modules": []},
     {"id": "ecom",      "title": "Маркетплейсы (e-com)",     "emoji": "🛒", "is_free": False, "category": "business",  "description": "Продажи на Ozon и Wildberries: карточки, реклама, масштабирование.", "modules": []},
-    {"id": "freelance", "title": "Фриланс и продажа услуг",  "emoji": "💼", "is_free": False, "category": "business",  "description": "Упакуй себя как специалиста, найди клиентов и выстрой доход.", "modules": []},
+    FREELANCE_COURSE,
     {"id": "brand",     "title": "Личный бренд",             "emoji": "⭐", "is_free": False, "category": "business",  "description": "Позиционирование, экспертность и монетизация личного бренда.", "modules": []},
     NOCODE_COURSE,
     VIBE_COURSE,
@@ -457,6 +458,7 @@ QUIZZES = {
     "vibe": VIBE_QUIZZES,
     "copy": COPY_QUIZZES,
     "nocode": NOCODE_QUIZZES,
+    "freelance": FREELANCE_QUIZZES,
     "intro": {
         "m1": [
             {
