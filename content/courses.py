@@ -401,6 +401,7 @@ INTRO_MODULES = [
 
 INTRO_MODULES_BY_ID = {m["id"]: m for m in INTRO_MODULES}
 
+from content.paid_brand import BRAND_COURSE, BRAND_QUIZZES
 from content.paid_copy import COPY_COURSE, COPY_QUIZZES
 from content.paid_freelance import FREELANCE_COURSE, FREELANCE_QUIZZES
 from content.paid_nocode import NOCODE_COURSE, NOCODE_QUIZZES
@@ -432,7 +433,7 @@ COURSES = [
     {"id": "sales",     "title": "Автоматизация продаж",     "emoji": "⚙️", "is_free": False, "category": "business",  "description": "CRM, чат-боты, воронки продаж. Продавай системно и автоматически.", "modules": []},
     {"id": "ecom",      "title": "Маркетплейсы (e-com)",     "emoji": "🛒", "is_free": False, "category": "business",  "description": "Продажи на Ozon и Wildberries: карточки, реклама, масштабирование.", "modules": []},
     FREELANCE_COURSE,
-    {"id": "brand",     "title": "Личный бренд",             "emoji": "⭐", "is_free": False, "category": "business",  "description": "Позиционирование, экспертность и монетизация личного бренда.", "modules": []},
+    BRAND_COURSE,
     NOCODE_COURSE,
     VIBE_COURSE,
 ]
@@ -459,6 +460,7 @@ QUIZZES = {
     "copy": COPY_QUIZZES,
     "nocode": NOCODE_QUIZZES,
     "freelance": FREELANCE_QUIZZES,
+    "brand": BRAND_QUIZZES,
     "intro": {
         "m1": [
             {
