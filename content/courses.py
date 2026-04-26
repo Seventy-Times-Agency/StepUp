@@ -403,8 +403,10 @@ INTRO_MODULES_BY_ID = {m["id"]: m for m in INTRO_MODULES}
 
 from content.paid_brand import BRAND_COURSE, BRAND_QUIZZES
 from content.paid_copy import COPY_COURSE, COPY_QUIZZES
+from content.paid_ecom import ECOM_COURSE, ECOM_QUIZZES
 from content.paid_freelance import FREELANCE_COURSE, FREELANCE_QUIZZES
 from content.paid_nocode import NOCODE_COURSE, NOCODE_QUIZZES
+from content.paid_sales import SALES_COURSE, SALES_QUIZZES
 from content.paid_smm import SMM_COURSE, SMM_QUIZZES
 from content.paid_target import TARGET_COURSE, TARGET_QUIZZES
 from content.paid_vibe import VIBE_COURSE, VIBE_QUIZZES
@@ -430,8 +432,8 @@ COURSES = [
     COPY_COURSE,
     {"id": "email",     "title": "Email-маркетинг",          "emoji": "📧", "is_free": False, "category": "promo",     "description": "Рассылки, автоворонки, сегментация базы и аналитика.", "modules": []},
     {"id": "influence", "title": "Influence-маркетинг",      "emoji": "🌟", "is_free": False, "category": "promo",     "description": "Работа с блогерами, посевы, коллаборации и оценка эффективности.", "modules": []},
-    {"id": "sales",     "title": "Автоматизация продаж",     "emoji": "⚙️", "is_free": False, "category": "business",  "description": "CRM, чат-боты, воронки продаж. Продавай системно и автоматически.", "modules": []},
-    {"id": "ecom",      "title": "Маркетплейсы (e-com)",     "emoji": "🛒", "is_free": False, "category": "business",  "description": "Продажи на Ozon и Wildberries: карточки, реклама, масштабирование.", "modules": []},
+    SALES_COURSE,
+    ECOM_COURSE,
     FREELANCE_COURSE,
     BRAND_COURSE,
     NOCODE_COURSE,
@@ -461,6 +463,8 @@ QUIZZES = {
     "nocode": NOCODE_QUIZZES,
     "freelance": FREELANCE_QUIZZES,
     "brand": BRAND_QUIZZES,
+    "sales": SALES_QUIZZES,
+    "ecom": ECOM_QUIZZES,
     "intro": {
         "m1": [
             {
